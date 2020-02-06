@@ -1,0 +1,203 @@
+<style>
+.tiny-code pre code {
+  font-size: 1.02em;
+}
+.small-code pre code {
+  font-size: 1.2em;
+}
+.medium-code pre code {
+  font-size: 1.4em;
+}
+</style>
+
+Web Scraping
+========================================================
+author: Peter Claussen
+date: 2/11/2020
+autosize: true
+font-family: 'Georgia'
+
+## A Gentle Introduction
+
+The Problem
+========================================================
+
+- Visit the NIST Statistical Reference Data Set [](https://www.itl.nist.gov/div898/strd/anova/SiRstv.html)
+- Use the data in [Data File in Two-Column Format](https://www.itl.nist.gov/div898/strd/anova/SiRstv.dat)
+- Reproduce the [image](https://www.itl.nist.gov/div898/strd/anova/SiRstv.gif)
+
+
+Manual Solution
+========================================================
+
+- Download file to local drive
+- Edit in text editor to remove comments
+- Read using standard data table functions
+
+R Solution
+========================================================
+
+- [R](https://cran.r-project.org)
+- [RStudio](https://rstudio.com)
+- [Anaconda](https://www.anaconda.com)
+
+R Solution
+========================================================
+class: small-code
+
+```{r,fig.width=8,fig.height=7}
+tbl <- read.table('./SiRstv.dat',header=TRUE)
+par(mar=c(5,6,2,2))
+plot(Resistance ~ Instrument, data=tbl, 
+     xlab='Instrument', ylab='Resistivity, ohm*cm',pch=16,
+     cex=2.5,cex.lab=2.5,cex.axis=2.5)
+```
+
+Python Solution
+========================================================
+
+- [Python](https://www.python.org)
+- [Reticulate](https://blog.rstudio.com/2018/03/26/reticulate-r-interface-to-python/)
+- [Spyder](https://www.spyder-ide.org)
+- [Anaconda](https://www.anaconda.com)
+- [SAS University Edition](https://www.sas.com/en_us/software/university-edition.html)
+
+
+install pandas
+
+
+Python Solution
+========================================================
+In order to run `python` from RStudio, you might need to match versions,
+```
+$ python -V
+$ which python
+```
+
+```{r}
+library(reticulate)
+use_python('/opt/anaconda3/bin/python')
+py_config()
+```
+
+Python Solution
+========================================================
+In order to 
+```{python}
+import pandas
+tbl = pandas.read_table('./SiRstv.dat',sep='\s+')
+tbl.plot.scatter(x='Instrument', y='Resistance')
+```
+
+Python Solution
+========================================================
+
+```{python}
+import matplotlib.pyplot as plt
+plt.plot(tbl['Instrument'], tbl['Resistance'],'ko')
+plt.ylabel('Resistivity, ohm*cm')
+plt.xlabel('Instrument')
+plt.show()
+```
+
+Next Steps
+========================================================
+
+We're a long way from web scraping. We had to download a file from the web to edit it into an appropriate format, deleting documentation. That's acceptable for a small exmaple, more interesting data will be larger and dynamic.
+
+Our next step towards web scraping will be to read files directly from the web. 
+
+
+Skipping lines
+========================================================
+class: small-code
+
+Since we know we deleted 60 lines of text from the original, we can simply skip lines:
+
+```{r,fig.width=8,fig.height=7}
+tbl <- read.table('https://www.itl.nist.gov/div898/strd/anova/SiRstv.dat',skip=60)
+names(tbl) <- c('Instrument','Resistance')
+par(mar=c(5,6,2,2))
+plot(Resistance ~ Instrument, data=tbl, 
+     xlab='Instrument', ylab='Resistivity, ohm*cm',pch=16,
+     cex=2.5,cex.lab=2.5,cex.axis=2.5)
+```
+
+
+========================================================
+class: small-code
+
+Alternatively,
+
+```{r,fig.width=8,fig.height=7}
+tbl <- read.table('https://www.itl.nist.gov/div898/strd/anova/SiRstv.dat',
+                  header=TRUE,skip=59,fill=TRUE)
+names(tbl) <- c(names(tbl)[2:3],'Blank')
+plot(as.formula(paste(names(tbl)[2],'~',names(tbl)[1])), data=tbl,
+     xlab='Instrument', ylab='Resistivity, ohm*cm',pch=16,
+     cex=2.5,cex.lab=2.5,cex.axis=2.5)
+```
+
+Learning the structure of a file
+========================================================
+
+This method still requires we know something about the contents of the file. How can we discover contents of the file, without loading the entre file?
+
+One approach
+========================================================
+
+```{r}
+lines <- readLines('https://www.itl.nist.gov/div898/strd/anova/SiRstv.dat')
+for(i in 1:length(lines)) {
+  if(nchar(lines[i])>0) {
+    current.row <- read.table(text=lines[i])
+    if(all(apply(current.row,2,is.numeric))) {
+      break
+    }
+  }
+}
+i
+```
+
+========================================================
+So,
+
+```{r,fig.width=8,fig.height=7}
+tbl <- read.table('https://www.itl.nist.gov/div898/strd/anova/SiRstv.dat',skip=i-1)
+names(tbl) <- c('Instrument','Resistance')
+par(mar=c(5,6,2,2))
+plot(Resistance ~ Instrument, data=tbl, 
+     xlab='Instrument', ylab='Resistivity, ohm*cm',pch=16,
+     cex=2.5,cex.lab=2.5,cex.axis=2.5)
+```
+...
+
+
+========================================================
+... or
+
+```{r,fig.width=8,fig.height=7}
+tbl <- read.table(text=paste(lines[(i+1):length(lines)],collapse='\n'))
+names(tbl) <- c('Instrument','Resistance')
+par(mar=c(5,6,2,2))
+plot(Resistance ~ Instrument, data=tbl, 
+     xlab='Instrument', ylab='Resistivity, ohm*cm',pch=16,
+     cex=2.5,cex.lab=2.5,cex.axis=2.5)
+```
+
+Sidenote
+========================================================
+```{r}
+?connections
+```
+
+
+
+numpy.loadtxt('./SiRstv.dat', skiprows=1)
+tbl = numpy.loadtxt('./SiRstv.dat', skiprows=1)
+
+Exercises
+========================================================
+
+Repeat with the 
+Read a data table from [Data File in Table Format](https://www.itl.nist.gov/div898/strd/anova/SiRstvt.dat)
