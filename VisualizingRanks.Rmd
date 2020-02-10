@@ -1,0 +1,238 @@
+---
+title: "Visualizing Rank Predictions"
+author: "Peter Claussen"
+date: "2/8/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#0072B2", "#D55E00", "#F0E442","#CC79A7","#000000","#734f80", "#2b5a74", "#004f39", "#787221", "#003959", "#6aaf00", "#663cd3")
+library(ggalluvial)
+library(ggplot2)
+```
+
+# Introduction
+
+We start with a data set consisting of NCAA wrestlers. For each wrestler, our primary outcome of interest is placing in the NCAA national tournament, for example the 2018 National Tournament.
+
+## National Tournament Placing
+
+THere are currently 10 weight classes contested in NCAA wrestling. The national tournament consists of 33 wrestlers per weight class. Wrestlers qualify by placing in the various wrestling conferences (i.e. B1G, Big 12, EIWA, etc).
+
+### Qualification
+
+Each conference is allocated one automatic qualification per weight class, usually determined as the winner of a double-elimination contest. Other allocations are determined by end of season [coaches rankings](https://www.ncaa.com/news/wrestling/article/2020-01-24/ncaa-releases-division-i-wrestling-coaches-panel-rankings). The top 33 wrestlers qualify allocations for their individual conferences, but must then place at their conference tournaments to advance to the national tournament.
+
+Final coaches ranks are also used to seed the tournament, sd that the best wrestlers do not meet until later tournament rounds.
+
+The NCAA tournament is contested as a 32-man [double elimination](https://en.wikipedia.org/wiki/Double-elimination_tournament) bracket, with a single 'pigtail' match. Wrestlers are typically eliminated from the tournament when they lose two matches (except for placing matches).
+
+Wrestlers who lose the pigtail match, then lose their subsequent match, will be assigned the `Finish` score `cons 33`. One wrestler per weight class will be eliminated at this stage.
+
+Wrestlers who are not in the pigtail matches but lose their first two matches will be scored as `cons 32`; this is the stage where the number of wrestlers in the tourment is reduced from 32 to 24. Wrestlers who lose their second match when there are 24 active competitors in the bracket are scored `cons 24`; similarly for `cons 16` and `cons 12`. 
+
+Wrestlers who have not lost their second match by the end of the 12-man consolation round go into the placing matches and are assigned exact numeric values for their places.
+
+# NCAA Results
+
+We load the 2018 tournament results below.
+
+```{r}
+rankings.dat <-read.csv("./ncaa2018.csv",header=TRUE)
+summary(rankings.dat$Finish)
+```
+
+Note that these data include wrestlers that did not qualify (`NQ`) for the 2018 national tournament. In some cases, these wrestlers were included because they were ranked by various ranking organizations. We can use these data to consider the question:
+
+> What ranking schemes best results?
+
+# Seeding
+
+We first consider seeding. Wrestlers are not assigned opponents at random; instead, the top rank wrestlers are assigned lower ranked wrestlers in the first round. In 2018, 16 seeds were assigned per weight class, out of 33 qualifiers.
+
+```{r}
+table(rankings.dat$Finish,rankings.dat$Seed)
+```
+
+We can visualize how the various seeded wresters faired, over all weigth classes, using alluvial plots.
+
+First, we remove all wrestlers in these data that did not qualify for the 2018 tournament. We also convert seed to a numeric value.
+
+```{r}
+seeds.dat <- rankings.dat[rankings.dat$Seed!="NQ",]
+seeds.dat$Seed <- as.numeric(as.character(seeds.dat$Seed))
+seeds.dat$Seed[is.na(seeds.dat$Seed)] <- 17
+```
+
+We then produce a correspondence table,
+
+```{r}
+alluv.dat <- aggregate(Weight ~ Finish + Seed, data=seeds.dat, FUN = "length")
+```
+
+```{r}
+ggplot(as.data.frame(alluv.dat),
+       aes(y = Weight, axis1 = Seed, axis2 = Finish)) +
+  geom_alluvium(aes(fill = Finish), width = 1/12) +
+  geom_stratum(width = 1/12, fill = "black", color = "grey") +
+  geom_label(stat = "stratum", label.strata = TRUE) +
+  scale_x_discrete(limits = c("Seed", "Finish"), expand = c(.05, .05)) +
+  scale_fill_manual(values=c(cbPalette,cbPalette,cbPalette)) +    
+  ggtitle("2018 National Tournament")
+```
+
+It can be difficult to follow the many paths to the first 1-8 places, so we can simplify by noting that place winners are titled 'All-American'
+
+```{r}
+seeds.dat$Finish <- as.character(seeds.dat$Finish)
+seeds.dat$FinishRound <- seeds.dat$Finish
+seeds.dat$FinishRound[seeds.dat$Finish %in% as.character(1:8)] <- 'AA'
+alluv.dat <- aggregate(Weight ~ FinishRound + Seed, data=seeds.dat, FUN = "length")
+```
+
+```{r}
+ggplot(as.data.frame(alluv.dat),
+       aes(y = Weight, axis1 = Seed, axis2 = FinishRound)) +
+  geom_alluvium(aes(fill = FinishRound), width = 1/12) +
+  geom_stratum(width = 1/12, fill = "black", color = "grey") +
+  geom_label(stat = "stratum", label.strata = TRUE) +
+  scale_x_discrete(limits = c("Seed", "FinishRound"), expand = c(.05, .05)) +
+  scale_fill_manual(values=c(cbPalette,cbPalette,cbPalette)) +
+  ggtitle("2018 National Tournament")
+```
+
+We can further simplify the data assigning the round we expect a wrestler to finish the tournament their rank:
+
+```{r}
+expected.round <- function(value,max.qual=33) {
+    if(!is.numeric(value)) {
+      value <- as.character(value)
+      if(value=='NR' || value == 'NS' || value == 'NQ') {
+        return('E[NQ]')
+      } else {
+        value <- as.numeric(value)
+      }
+    }
+    if(is.na(value)) {
+      return('E[NQ]')
+    } else if(value > max.qual) {
+      return('E[NQ]')
+    } else if(value == 33) {
+      return('E[cons 33]')
+    } else if(value > 24) {
+      return('E[cons 32]')
+    } else if(value > 16) {
+      return('E[cons 24]')
+    } else if(value > 12) {
+      return('E[cons 16]')
+    } else if(value>8) {
+      return('E[cons 12]')
+    } else {
+      return('E[AA]')
+      #return(value)
+    }
+}
+```
+
+Calculate expected finish based on seed
+
+```{r}
+seeds.dat$Expected <- mapply(expected.round,seeds.dat[,'Seed'])
+```
+
+```{r}
+alluv.dat <- aggregate(Weight ~ FinishRound + Expected, data=seeds.dat, FUN = "length")
+```
+
+```{r}
+ggplot(as.data.frame(alluv.dat),
+       aes(y = Weight, axis1 = Expected, axis2 = FinishRound)) +
+  geom_alluvium(aes(fill = FinishRound), width = 1/12) +
+  geom_stratum(width = 1/12, fill = "black", color = "grey") +
+  geom_label(stat = "stratum", label.strata = TRUE) +
+  scale_x_discrete(limits = c("Expected", "FinishRound"), expand = c(.05, .05)) +
+  scale_fill_manual(values=c(cbPalette,cbPalette,cbPalette)) +
+  ggtitle("2018 National Tournament")
+```
+
+# Coaches Rankings
+
+Next, we consider coaches rankings. Let's consider only the top 33 ranked wresters.
+
+```{r}
+coaches.dat <- rankings.dat
+coaches.dat$Coaches <- as.numeric(as.character(coaches.dat$Coaches))
+coaches.dat <- coaches.dat[!is.na(coaches.dat$Coaches),] 
+
+coaches.dat$Expected <- mapply(expected.round,coaches.dat[,'Coaches'])
+
+coaches.dat$FinishRound <- as.character(coaches.dat$Finish)
+coaches.dat$FinishRound[coaches.dat$Finish %in% as.character(1:8)] <- 'AA'
+alluv.dat <- aggregate(Weight ~ FinishRound + Expected, data=coaches.dat, FUN = "length")
+```
+
+```{r}
+ggplot(as.data.frame(alluv.dat),
+       aes(y = Weight, axis1 = Expected, axis2 = FinishRound)) +
+  geom_alluvium(aes(fill = FinishRound), width = 1/12) +
+  geom_stratum(width = 1/12, fill = "black", color = "grey") +
+  geom_label(stat = "stratum", label.strata = TRUE) +
+  scale_x_discrete(limits = c("Expected", "FinishRound"), expand = c(.05, .05)) +
+  scale_fill_manual(values=c(cbPalette,cbPalette,cbPalette)) +
+  ggtitle("2018 National Tournament")
+```
+
+
+# Conference Finish
+
+Now, consider how conferece place predicts national tournament placing.
+
+```{r}
+conference.dat <- rankings.dat[rankings.dat$ConfFinish!="",]
+conference.dat$Expected <- mapply(expected.round,conference.dat[,'Coaches'])
+conference.dat$FinishRound <- as.character(conference.dat$Finish)
+conference.dat$FinishRound[conference.dat$Finish %in% as.character(1:8)] <- 'AA'
+
+alluv.dat <- aggregate(Weight ~ Finish + ConfFinish, data=conference.dat, FUN = "length")
+
+```
+
+```{r}
+ggplot(as.data.frame(alluv.dat),
+       aes(y = Weight, axis1 = ConfFinish, axis2 = Finish)) +
+  geom_alluvium(aes(fill = Finish), width = 1/12) +
+  geom_stratum(width = 1/12, fill = "black", color = "grey") +
+  geom_label(stat = "stratum", label.strata = TRUE) +
+  scale_x_discrete(limits = c("Conference Finish", "NCAA Finish"), expand = c(.05, .05)) +
+  scale_fill_manual(values=c(cbPalette,cbPalette,cbPalette)) +
+  ggtitle("2018 National Tournament")
+```
+
+## Rankings through conference
+
+```{r}
+ggplot(as.data.frame(aggregate(Seed ~ Finish + Expected + Conference, data=conference.dat, FUN = "length")),
+       aes(y = Seed, axis2 = Conference, axis1 = Expected, axis3 = Finish)) +
+  geom_alluvium(aes(fill = Finish), width = 1/12) +
+  geom_stratum(width = 1/12, fill = "black", color = "grey") +
+  geom_label(stat = "stratum", label.strata = TRUE) +
+  scale_x_discrete(limits = c("Expected (Rank)", "Conference", "Finish"), expand = c(.05, .05)) +
+  scale_fill_manual(values=c(cbPalette,cbPalette,cbPalette)) + scale_color_manual(values=c(cbPalette,cbPalette,cbPalette)) +
+  ggtitle("2018 National Tournament")
+```
+
+
+# Conference Seedings
+
+```{r,fig.width=12,fig.height=10}
+
+ggplot(as.data.frame(aggregate(Seed ~ FinishRound + Expected + ConfSeed + ConfFinish, data=conference.dat, FUN = "length")),
+       aes(y = Seed, axis2 = ConfSeed, axis3 = ConfFinish, axis1 = Expected, axis4=FinishRound)) +
+  geom_alluvium(aes(fill = FinishRound), width = 1/6) +
+  geom_stratum(width = 1/6, fill = "black", color = "grey") +
+  geom_label(stat = "stratum", label.strata = TRUE) +
+  scale_x_discrete(limits = c("Coaches Rank", "Conference Seed", "Conference Finish",  "NCAA Finish"), expand = c(.05, .05)) +
+  scale_fill_manual(values=c(cbPalette,cbPalette,cbPalette)) + scale_color_manual(values=c(cbPalette,cbPalette,cbPalette)) +
+  ggtitle("2018 National Tournament")
+```
